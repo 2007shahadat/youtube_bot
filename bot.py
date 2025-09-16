@@ -169,11 +169,8 @@ def main():
     app.add_handler(CommandHandler("videoinfo", videoinfo))
     app.add_handler(CallbackQueryHandler(button))
 
-    # Start background task
-    async def bg_task():
-        await check_new_videos(app)
-
-    app.job_queue.run_once(lambda _: asyncio.create_task(bg_task()), when=1)
+    # Start background task WITHOUT JobQueue
+    asyncio.create_task(check_new_videos(app))
 
     print("Bot is running...")
     app.run_polling()
