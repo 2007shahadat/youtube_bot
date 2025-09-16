@@ -3,10 +3,7 @@ import logging
 import asyncio
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    ContextTypes
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from googleapiclient.discovery import build
 
 # Load environment variables
@@ -14,7 +11,7 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
-# YouTube API setup
+# YouTube API
 youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
 
 # Logging
@@ -24,41 +21,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Subscribed channels {chat_id: [channel_ids]}
+# Subscriptions
 subscribed_channels = {}
-
-# Last video cache {channel_id: latest_video_id}
 last_videos = {}
 
-# ----------------- Command Handlers -----------------
+# ----------------- Handlers -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎬 *Full YouTube Bot* 🎬\n\n"
         "Commands:\n"
-        "/search <keyword> - Search videos\n"
-        "/channel <channel_id> - Subscribe to channel updates\n"
-        "/trending - Show trending videos\n"
-        "/playlist <playlist_id> - Fetch playlist videos\n"
-        "/videoinfo <video_url> - Get video info",
+        "/search <keyword>\n"
+        "/channel <channel_id>\n"
+        "/trending\n"
+        "/playlist <playlist_id>\n"
+        "/videoinfo <video_url>",
         parse_mode="Markdown"
     )
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     if not query:
-        await update.message.reply_text("Please provide search keyword: /search funny cats")
+        await update.message.reply_text("Use: /search funny cats")
         return
     res = youtube.search().list(part="snippet", q=query, type="video", maxResults=5).execute()
-    items = res.get("items", [])
-    if not items:
-        await update.message.reply_text("No videos found.")
-        return
-    for item in items:
+    for item in res.get("items", []):
         title = item['snippet']['title']
         video_id = item['id']['videoId']
-        thumbnail = item['snippet']['thumbnails']['high']['url']
         url = f"https://www.youtube.com/watch?v={video_id}"
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Watch on YouTube", url=url)]])
+        thumbnail = item['snippet']['thumbnails']['high']['url']
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Watch", url=url)]])
         await update.message.reply_photo(photo=thumbnail, caption=title, reply_markup=keyboard)
 
 async def channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,28 +57,28 @@ async def channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id not in subscribed_channels:
         subscribed_channels[chat_id] = []
     if not context.args:
-        await update.message.reply_text("Please provide Channel ID: /channel UC_x5XG1OV2P6uZZ5FSM9Ttw")
+        await update.message.reply_text("Use: /channel UC_x5XG1OV2P6uZZ5FSM9Ttw")
         return
     channel_id = context.args[0]
-    if channel_id in subscribed_channels[chat_id]:
-        await update.message.reply_text("Already subscribed!")
-    else:
+    if channel_id not in subscribed_channels[chat_id]:
         subscribed_channels[chat_id].append(channel_id)
         await update.message.reply_text(f"Subscribed to channel: {channel_id}")
+    else:
+        await update.message.reply_text("Already subscribed!")
 
 async def trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = youtube.videos().list(part="snippet", chart="mostPopular", maxResults=5, regionCode="US").execute()
     for item in res.get("items", []):
         title = item['snippet']['title']
         video_id = item['id']
-        thumbnail = item['snippet']['thumbnails']['high']['url']
         url = f"https://www.youtube.com/watch?v={video_id}"
+        thumbnail = item['snippet']['thumbnails']['high']['url']
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Watch", url=url)]])
         await update.message.reply_photo(photo=thumbnail, caption=title, reply_markup=keyboard)
 
 async def playlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Please provide playlist ID: /playlist PLxxxx")
+        await update.message.reply_text("Use: /playlist PLxxxx")
         return
     playlist_id = context.args[0]
     res = youtube.playlistItems().list(part="snippet", playlistId=playlist_id, maxResults=5).execute()
@@ -101,18 +92,12 @@ async def playlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def videoinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Please provide video URL: /videoinfo https://www.youtube.com/watch?v=xxxx")
+        await update.message.reply_text("Use: /videoinfo <video_url>")
         return
-    url = context.args[0]
-    video_id = url.split("v=")[-1]
+    video_id = context.args[0].split("v=")[-1]
     res = youtube.videos().list(part="snippet,statistics", id=video_id).execute()
     item = res['items'][0]
-    title = item['snippet']['title']
-    desc = item['snippet']['description']
-    views = item['statistics'].get('viewCount', 'N/A')
-    likes = item['statistics'].get('likeCount', 'N/A')
-    publish = item['snippet']['publishedAt']
-    msg = f"🎥 {title}\n\nViews: {views}\nLikes: {likes}\nPublished: {publish}\n\nDescription:\n{desc}"
+    msg = f"🎥 {item['snippet']['title']}\nViews: {item['statistics'].get('viewCount','N/A')}\nLikes: {item['statistics'].get('likeCount','N/A')}\nPublished: {item['snippet']['publishedAt']}\n\n{item['snippet']['description']}"
     await update.message.reply_text(msg)
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -120,9 +105,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     await query.edit_message_text(text=f"You clicked: {query.data}")
 
-# ----------------- Background Task -----------------
+# ----------------- Background -----------------
 async def check_new_videos(app: Application):
-    await asyncio.sleep(5)  # wait for bot to start
+    await asyncio.sleep(5)
     while True:
         for chat_id, channels in subscribed_channels.items():
             for channel_id in channels:
@@ -144,7 +129,8 @@ async def check_new_videos(app: Application):
 
 # ----------------- Main -----------------
 async def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    # Build Application WITHOUT JobQueue
+    app = Application.builder().token(TELEGRAM_TOKEN).post_init(None).build()
 
     # Add handlers
     app.add_handler(CommandHandler("start", start))
@@ -155,7 +141,7 @@ async def main():
     app.add_handler(CommandHandler("videoinfo", videoinfo))
     app.add_handler(CallbackQueryHandler(button))
 
-    # Start background task AFTER bot starts
+    # Start background task
     asyncio.create_task(check_new_videos(app))
 
     print("Bot is running...")
